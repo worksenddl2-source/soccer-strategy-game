@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>축구 공략 - Goal Rush</title>
+<style>
+  :root {
+    --bg: #0d1b12;
+    --panel: rgba(8, 20, 12, 0.92);
+    --text: #f2f7f3;
+    --muted: #a8c2b0;
+    --accent: #ffd23f;
+    --blue: #3a8dff;
+    --red: #ff4d4d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; overflow: hidden; touch-action: none; user-select: none; }
+  #wrap { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; box-shadow: 0 0 40px rgba(0,0,0,.6); border-radius: 8px; }
+  #hud { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: center; pointer-events: none; padding: 8px; }
+  #hudInner { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .chip { background: var(--panel); border: 1px solid rgba(255,255,255,.12); padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .chip b { color: var(--accent); }
+  .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); padding: 16px; }
+  .overlay.hidden { display: none; }
+  .card { background: var(--panel); border: 1px solid rgba(255,255,255,.15); border-radius: 16px; padding: 26px 24px; max-width: 440px; width: 100%; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.5); max-height: 100%; overflow-y: auto; }
+  .card h1 { font-size: 34px; margin-bottom: 4px; letter-spacing: 1px; }
+  .card h1 span { color: var(--accent); }
+  .card h2 { font-size: 26px; margin-bottom: 10px; }
+  .card p { color: var(--muted); line-height: 1.6; margin: 8px 0; font-size: 15px; }
+  .keys { text-align: left; margin: 14px 0; font-size: 14px; line-height: 1.9; color: var(--text); background: rgba(255,255,255,.05); border-radius: 10px; padding: 10px 14px; }
+  kbd { background: #24392b; border: 1px solid #3c5a45; border-bottom-width: 3px; padding: 1px 7px; border-radius: 5px; font-family: inherit; font-size: 12px; }
+  button.big { margin-top: 14px; background: var(--accent); color: #1b1b1b; border: none; font-size: 18px; font-weight: 800; padding: 12px 34px; border-radius: 999px; cursor: pointer; box-shadow: 0 4px 0 #b8901a; }
+  button.big:active { transform: translateY(2px); box-shadow: 0 2px 0 #b8901a; }
+  .stars { font-size: 28px; color: var(--accent); margin: 6px 0; }
+  #touch { position: absolute; inset: 0; pointer-events: none; display: none; }
+  #touch.on { display: block; }
+  #stick { position: absolute; left: 24px; bottom: 30px; width: 130px; height: 130px; border-radius: 50%; background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.25); pointer-events: auto; }
+  #knob { position: absolute; left: 40px; top: 40px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,.4); }
+  .tbtn { position: absolute; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; pointer-events: auto; border: 2px solid rgba(255,255,255,.35); color: #fff; font-size: 14px; }
+  #bShoot { right: 24px; bottom: 40px; width: 84px; height: 84px; background: rgba(255,77,77,.55); }
+  #bPass { right: 120px; bottom: 24px; width: 64px; height: 64px; background: rgba(58,141,255,.55); }
+  #bSprint { right: 40px; bottom: 140px; width: 60px; height: 60px; background: rgba(255,210,63,.5); }
+  .tbtn.down { filter: brightness(1.5); transform: scale(.95); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="hud"><div id="hudInner">
+    <div class="chip">스테이지 <b id="hStage">1</b>/10</div>
+    <div class="chip">골 <b id="hGoals">0</b>/<span id="hNeed">1</span></div>
+    <div class="chip">공격 기회 <b id="hTries">3</b></div>
+    <div class="chip">점수 <b id="hScore">0</b></div>
+  </div></div>
+
+  <div id="touch">
+    <div id="stick"><div id="knob"></div></div>
+    <div class="tbtn" id="bSprint">질주</div>
+    <div class="tbtn" id="bPass">패스</div>
+    <div class="tbtn" id="bShoot">슛</div>
+  </div>
+
+  <div class="overlay" id="ovTitle">
+    <div class="card">
+      <h1>⚽ 축구 <span>공략</span></h1>
+      <p>수비진을 뚫고 골망을 흔들어라!<br>10개의 스테이지를 모두 공략하면 승리!</p>
+      <div class="keys">
+        <div><kbd>WASD</kbd> / <kbd>방향키</kbd> 이동 · 드리블</div>
+        <div><kbd>Space</kbd> / <kbd>마우스 클릭</kbd> 길게 눌러 슛 파워 충전</div>
+        <div><kbd>마우스</kbd> 슛 조준 (키보드만 쓰면 이동 방향 쪽 구석)</div>
+        <div><kbd>E</kbd> / <kbd>우클릭</kbd> 동료에게 패스 (조준 방향의 동료)</div>
+        <div><kbd>Shift</kbd> 질주 (스태미나 소모)</div>
+      </div>
+      <p>⚠ 수비수에게 붙잡히거나, 패스를 차단당하거나, 공이 나가면 공격 실패!<br>각 공격은 <b style="color:var(--accent)">12초</b> 안에 끝내야 합니다.</p>
+      <p id="bestTxt"></p>
+      <button class="big" id="btnStart">경기 시작</button>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="ovMsg">
+    <div class="card">
+      <h2 id="mTitle"></h2>
+      <div class="stars" id="mStars"></div>
+      <p id="mBody"></p>
+      <button class="big" id="mBtn">계속</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const W = 600, H = 900;
+  const FIELD = { l: 20, r: 580, t: 50, b: 880 };
+  const GOAL = { l: 225, r: 375, y: FIELD.t, depth: 26 };
+  const MAX_STAGE = 10;
+  const ATTACK_TIME = 12;
+
+  const cvs = document.getElementById('c');
+  const ctx = cvs.getContext('2d');
+  let scale = 1, dpr = 1;
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    scale = Math.min(vw / W, vh / H);
+    cvs.style.width = (W * scale) + 'px';
+    cvs.style.height = (H * scale) + 'px';
+    cvs.width = Math.round(W * scale * dpr);
+    cvs.height = Math.round(H * scale * dpr);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- 유틸 ----------
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return { x: x / l, y: y / l }; };
+
+  // ---------- 상태 ----------
+  const S = {
+    mode: 'title', // title | play | pause
+    stage: 1, goals: 0, need: 1, tries: 3, score: 0,
+    attackers: [], defenders: [], keeper: null,
+    ball: null, ctrl: 0, timer: ATTACK_TIME,
+    charge: 0, charging: false, stamina: 1,
+    flash: null, freeze: 0, particles: [],
+  };
+  let best = 0;
+  try { best = +localStorage.getItem('soccerRushBest') || 0; } catch (e) {}
+
+  function stageConfig(n) {
+    return {
+      defenders: Math.min(1 + n, 9),
+      defSpeed: 118 + n * 9,
+      pressers: n >= 6 ? 2 : 1,
+      keeperSpeed: 150 + n * 18,
+      need: n <= 3 ? 1 : n <= 7 ? 2 : 3,
+      tries: n <= 3 ? 3 : n <= 7 ? 4 : 5,
+      teammates: n <= 2 ? 1 : 2,
+    };
+  }
+
+  function setupStage() {
+    const cfg = stageConfig(S.stage);
+    S.cfg = cfg;
+    S.goals = 0; S.need = cfg.need; S.tries = cfg.tries;
+    setupAttack();
+  }
+
+  function setupAttack() {
+    const cfg = S.cfg;
+    S.attackers = [{ x: 300, y: 790, r: 14, num: 9, face: { x: 0, y: -1 } }];
+    const mates = [{ x: 140, y: 700, num: 7 }, { x: 460, y: 700, num: 11 }];
+    for (let i = 0; i < cfg.teammates; i++) {
+      const m = cfg.teammates === 1 ? { x: 470, y: 690, num: 10 } : mates[i];
+      S.attackers.push({ x: m.x, y: m.y, r: 14, num: m.num, face: { x: 0, y: -1 }, wob: rand(0, 6) });
+    }
+    S.defenders = [];
+    const n = cfg.defenders;
+    // 포메이션: 골문에 가까울수록 촘촘하게
+    const rows = [];
+    let left = n;
+    const perRow = [3, 3, 3];
+    for (let r = 0; r < 3 && left > 0; r++) { const c = Math.min(perRow[r], left); rows.push(c); left -= c; }
+    rows.forEach((count, ri) => {
+      const y = 200 + ri * 150 + (rows.length === 1 ? 120 : 0);
+      for (let i = 0; i < count; i++) {
+        const x = 300 + (i - (count - 1) / 2) * (count === 1 ? 0 : 170) + rand(-20, 20);
+        S.defenders.push({ x, y: y + rand(-15, 15), hx: x, hy: y, r: 14, num: 2 + S.defenders.length, speed: cfg.defSpeed * rand(0.92, 1.06) });
+      }
+    });
+    S.keeper = { x: 300, y: GOAL.y + 20, r: 16, speed: cfg.keeperSpeed, diving: 0 };
+    S.ball = { x: 300, y: 774, vx: 0, vy: 0, r: 7, owner: S.attackers[0], kind: null, spin: 0 };
+    S.ctrl = 0;
+    S.timer = ATTACK_TIME;
+    S.charge = 0; S.charging = false; S.stamina = 1;
+    S.flash = null; S.freeze = 0;
+    updateHud();
+  }
+
+  function updateHud() {
+    document.getElementById('hStage').textContent = S.stage;
+    document.getElementById('hGoals').textContent = S.goals;
+    document.getElementById('hNeed').textContent = S.need;
+    document.getElementById('hTries').textContent = S.tries;
+    document.getElementById('hScore').textContent = S.score;
+  }
+
+  // ---------- 입력 ----------
+  const keys = {};
+  const mouse = { x: 300, y: 0, active: false };
+  const touch = { on: false, sx: 0, sy: 0, id: null, sprint: false };
+  let shootDown = false, passPressed = false;
+
+  window.addEventListener('keydown', e => {
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+    if (e.repeat) return;
+    keys[e.code] = true;
+    if (e.code === 'Space') shootDown = true;
+    if (e.code === 'KeyE') passPressed = true;
+    if (e.code === 'Enter' && S.mode !== 'play') {
+      const btn = !ovMsg.classList.contains('hidden') ? mBtn : (!ovTitle.classList.contains('hidden') ? btnStart : null);
+      if (btn) btn.click();
+    }
+  });
+  window.addEventListener('keyup', e => {
+    keys[e.code] = false;
+    if (e.code === 'Space') shootDown = false;
+  });
+  function toGame(e) {
+    const r = cvs.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / scale, y: (e.clientY - r.top) / scale };
+  }
+  cvs.addEventListener('mousemove', e => { const p = toGame(e); mouse.x = p.x; mouse.y = p.y; mouse.active = true; });
+  cvs.addEventListener('mousedown', e => {
+    const p = toGame(e); mouse.x = p.x; mouse.y = p.y; mouse.active = true;
+    if (e.button === 0) shootDown = true;
+    if (e.button === 2) passPressed = true;
+  });
+  window.addEventListener('mouseup', e => { if (e.button === 0) shootDown = false; });
+  cvs.addEventListener('contextmenu', e => e.preventDefault());
+
+  // 터치 컨트롤
+  const touchEl = document.getElementById('touch');
+  const stick = document.getElementById('stick'), knob = document.getElementById('knob');
+  const tvec = { x: 0, y: 0 };
+  if ('ontouchstart' in window || navigator.maxTouchPoints > 0) { touch.on = true; touchEl.classList.add('on'); }
+  stick.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.changedTouches[0]; touch.id = t.identifier;
+    const r = stick.getBoundingClientRect(); touch.sx = r.left + r.width / 2; touch.sy = r.top + r.height / 2;
+    moveStick(t);
+  }, { passive: false });
+  stick.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) if (t.identifier === touch.id) moveStick(t);
+  }, { passive: false });
+  const endStick = e => {
+    for (const t of e.changedTouches) if (t.identifier === touch.id) {
+      touch.id = null; tvec.x = 0; tvec.y = 0; knob.style.left = '40px'; knob.style.top = '40px';
+    }
+  };
+  stick.addEventListener('touchend', endStick); stick.addEventListener('touchcancel', endStick);
+  function moveStick(t) {
+    let dx = t.clientX - touch.sx, dy = t.clientY - touch.sy;
+    const l = Math.hypot(dx, dy), m = 45;
+    if (l > m) { dx = dx / l * m; dy = dy / l * m; }
+    tvec.x = dx / m; tvec.y = dy / m;
+    knob.style.left = (40 + dx) + 'px'; knob.style.top = (40 + dy) + 'px';
+  }
+  function bindBtn(id, down, up) {
+    const el = document.getElementById(id);
+    el.addEventListener('touchstart', e => { e.preventDefault(); el.classList.add('down'); down(); }, { passive: false });
+    const u = e => { e.preventDefault(); el.classList.remove('down'); up && up(); };
+    el.addEventListener('touchend', u, { passive: false }); el.addEventListener('touchcancel', u, { passive: false });
+  }
+  bindBtn('bShoot', () => { shootDown = true; mouse.active = false; }, () => { shootDown = false; });
+  bindBtn('bPass', () => { passPressed = true; mouse.active = false; });
+  bindBtn('bSprint', () => { touch.sprint = true; }, () => { touch.sprint = false; });
+
+  function inputVec() {
+    let x = 0, y = 0;
+    if (keys.KeyA || keys.ArrowLeft) x -= 1;
+    if (keys.KeyD || keys.ArrowRight) x += 1;
+    if (keys.KeyW || keys.ArrowUp) y -= 1;
+    if (keys.KeyS || keys.ArrowDown) y += 1;
+    if (x || y) { const n = norm(x, y); return n; }
+    if (Math.hypot(tvec.x, tvec.y) > 0.15) return { x: tvec.x, y: tvec.y };
+    return { x: 0, y: 0 };
+  }
+
+  // 조준점: 마우스 또는 이동 방향에 따른 골대 구석
+  function aimPoint() {
+    if (mouse.active) return { x: mouse.x, y: mouse.y };
+    const v = inputVec();
+    const c = S.attackers[S.ctrl];
+    if (Math.abs(v.x) > 0.3) return { x: v.x < 0 ? GOAL.l + 18 : GOAL.r - 18, y: GOAL.y };
+    // 키퍼 반대쪽 구석을 기본 조준
+    return { x: S.keeper.x > 300 ? GOAL.l + 22 : GOAL.r - 22, y: GOAL.y, auto: true, from: c };
+  }
+
+  // ---------- 게임 로직 ----------
+  function carrier() { return S.ball.owner && S.attackers.includes(S.ball.owner) ? S.ball.owner : null; }
+
+  function endAttack(success, title, sub) {
+    if (S.freeze > 0) return;
+    S.freeze = 1.6;
+    S.flash = { title, sub, color: success ? '#ffd23f' : '#ff6b6b', t: 0 };
+    S.charging = false; S.charge = 0;
+    if (success) {
+      S.goals++;
+      const pts = 100 * S.stage + Math.round(S.timer * 10);
+      S.score += pts;
+      S.flash.sub = `+${pts}점`;
+      burst(S.ball.x, Math.max(S.ball.y, GOAL.y - 10), 40);
+    } else {
+      S.tries--;
+    }
+    updateHud();
+  }
+
+  function afterFreeze() {
+    if (S.goals >= S.need) {
+      // 스테이지 클리어
+      const bonus = S.tries * 150 * S.stage;
+      S.score += bonus;
+      updateHud();
+      saveBest();
+      if (S.stage >= MAX_STAGE) {
+        showMsg('🏆 완전 공략!', '★★★', `10개 스테이지를 모두 공략했습니다!<br>남은 기회 보너스 +${bonus}<br>최종 점수: <b style="color:#ffd23f">${S.score}</b>`, '다시 하기', () => { S.stage = 1; S.score = 0; setupStage(); });
+      } else {
+        const stars = S.tries >= 2 ? '★★★' : S.tries === 1 ? '★★☆' : '★☆☆';
+        const next = stageConfig(S.stage + 1);
+        showMsg(`스테이지 ${S.stage} 클리어!`, stars, `남은 기회 보너스 +${bonus}<br><br>다음 스테이지: 수비수 ${next.defenders}명 · 필요한 골 ${next.need}개`, '다음 스테이지', () => { S.stage++; setupStage(); });
+      }
+      S.mode = 'pause';
+    } else if (S.tries <= 0) {
+      saveBest();
+      showMsg('경기 종료', '', `스테이지 ${S.stage}에서 공격이 막혔습니다.<br>최종 점수: <b style="color:#ffd23f">${S.score}</b><br>최고 점수: ${best}`, '이 스테이지 재도전', () => { S.score = Math.floor(S.score / 2); setupStage(); });
+      S.mode = 'pause';
+    } else {
+      setupAttack();
+    }
+  }
+
+  function saveBest() {
+    if (S.score > best) { best = S.score; try { localStorage.setItem('soccerRushBest', best); } catch (e) {} }
+  }
+
+  function shoot() {
+    const c = carrier(); if (!c) return;
+    const a = aimPoint();
+    const power = clamp(S.charge, 0.15, 1);
+    let d = norm(a.x - c.x, a.y - c.y);
+    const spread = (0.02 + power * power * 0.09) * (Math.random() * 2 - 1);
+    const ang = Math.atan2(d.y, d.x) + spread;
+    const sp = 380 + power * 620;
+    S.ball.owner = null; S.ball.kind = 'shot';
+    S.ball.x = c.x + d.x * 20; S.ball.y = c.y + d.y * 20;
+    S.ball.vx = Math.cos(ang) * sp; S.ball.vy = Math.sin(ang) * sp;
+    S.ball.lastTouch = c;
+    S.charge = 0; S.charging = false;
+  }
+
+  function pass() {
+    const c = carrier(); if (!c) return;
+    const mates = S.attackers.filter(m => m !== c);
+    if (!mates.length) return;
+    const a = mouse.active ? { x: mouse.x, y: mouse.y } : null;
+    let target;
+    if (a) {
+      target = mates.reduce((b, m) => dist(m, a) < dist(b, a) ? m : b);
+    } else {
+      const v = inputVec();
+      if (v.x || v.y) {
+        target = mates.reduce((b, m) => {
+          const dm = norm(m.x - c.x, m.y - c.y), db = norm(b.x - c.x, b.y - c.y);
+          return (dm.x * v.x + dm.y * v.y) > (db.x * v.x + db.y * v.y) ? m : b;
+        });
+      } else {
+        target = mates.reduce((b, m) => m.y < b.y ? m : b); // 가장 전방의 동료
+      }
+    }
+    const d0 = dist(c, target);
+    const sp = 560;
+    const lead = d0 / sp;
+    const tx = target.x + (target.vx || 0) * lead, ty = target.y + (target.vy || 0) * lead;
+    const d = norm(tx - c.x, ty - c.y);
+    S.ball.owner = null; S.ball.kind = 'pass';
+    S.ball.x = c.x + d.x * 20; S.ball.y = c.y + d.y * 20;
+    S.ball.vx = d.x * sp; S.ball.vy = d.y * sp;
+    S.ball.lastTouch = c; S.ball.passTarget = target;
+    S.ctrl = S.attackers.indexOf(target);
+    S.charge = 0; S.charging = false;
+  }
+
+  function moveToward(p, tx, ty, speed, dt) {
+    const dx = tx - p.x, dy = ty - p.y, l = Math.hypot(dx, dy);
+    if (l < 1) { p.vx = 0; p.vy = 0; return; }
+    const s = Math.min(speed * dt, l);
+    p.vx = dx / l * speed; p.vy = dy / l * speed;
+    p.x += dx / l * s; p.y += dy / l * s;
+  }
+
+  function update(dt) {
+    if (S.flash) S.flash.t += dt;
+    updateParticles(dt);
+    if (S.freeze > 0) {
+      S.freeze -= dt;
+      // 공은 계속 굴러감
+      S.ball.x += S.ball.vx * dt * 0.5; S.ball.y += S.ball.vy * dt * 0.5;
+      S.ball.vx *= 0.9; S.ball.vy *= 0.9;
+      if (S.freeze <= 0) afterFreeze();
+      return;
+    }
+
+    S.timer -= dt;
+    if (S.timer <= 0) { S.timer = 0; endAttack(false, '시간 초과!', '공격 시간 12초를 넘겼습니다'); return; }
+
+    const ctrlP = S.attackers[S.ctrl];
+    const c = carrier();
+    const v = inputVec();
+    const sprinting = (keys.ShiftLeft || keys.ShiftRight || touch.sprint) && S.stamina > 0.02 && (v.x || v.y);
+    if (sprinting) S.stamina = Math.max(0, S.stamina - dt * 0.45);
+    else S.stamina = Math.min(1, S.stamina + dt * 0.22);
+    const baseSpeed = c === ctrlP ? 190 : 210;
+    const spd = baseSpeed * (sprinting ? 1.5 : 1) * (S.charging ? 0.6 : 1);
+
+    // 조종 중인 선수 이동
+    ctrlP.x += v.x * spd * dt; ctrlP.y += v.y * spd * dt;
+    ctrlP.vx = v.x * spd; ctrlP.vy = v.y * spd;
+    if (v.x || v.y) ctrlP.face = norm(v.x, v.y);
+    // 패스 받으러 가는 중이면 공 쪽으로 살짝 끌림
+    if (!S.ball.owner && S.ball.kind === 'pass' && S.ball.passTarget === ctrlP && !(v.x || v.y)) {
+      moveToward(ctrlP, S.ball.x, S.ball.y, 120, dt);
+    }
+    ctrlP.x = clamp(ctrlP.x, FIELD.l + 10, FIELD.r - 10);
+    ctrlP.y = clamp(ctrlP.y, FIELD.t + 30, FIELD.b - 10);
+
+    // AI 동료
+    S.attackers.forEach((m, i) => {
+      if (i === S.ctrl) return;
+      m.wob += dt;
+      const ref = c || ctrlP;
+      const side = m.x < 300 ? -1 : 1;
+      let tx = 300 + side * 150 + Math.sin(m.wob * 0.9) * 40;
+      let ty = clamp(ref.y - 130 + Math.cos(m.wob * 0.7) * 30, 170, 760);
+      // 가까운 수비수에게서 벗어나기
+      S.defenders.forEach(d => {
+        const dd = Math.hypot(m.x - d.x, m.y - d.y);
+        if (dd < 70) { tx += (m.x - d.x) / dd * 60; ty += (m.y - d.y) / dd * 30; }
+      });
+      tx = clamp(tx, FIELD.l + 20, FIELD.r - 20);
+      moveToward(m, tx, ty, 150, dt);
+      m.face = norm(S.ball.x - m.x, S.ball.y - m.y);
+    });
+
+    // 공 소유
+    if (S.ball.owner) {
+      const o = S.ball.owner;
+      S.ball.x = o.x + o.face.x * 17; S.ball.y = o.y + o.face.y * 17;
+      S.ball.vx = o.vx || 0; S.ball.vy = o.vy || 0;
+      S.ball.spin += Math.hypot(S.ball.vx, S.ball.vy) * dt * 0.05;
+    } else {
+      S.ball.x += S.ball.vx * dt; S.ball.y += S.ball.vy * dt;
+      const fr = S.ball.kind === 'shot' ? 0.55 : 0.4;
+      S.ball.vx *= Math.pow(fr, dt); S.ball.vy *= Math.pow(fr, dt);
+      S.ball.spin += Math.hypot(S.ball.vx, S.ball.vy) * dt * 0.05;
+      // 굴러가는 공을 공격수가 잡음
+      for (const m of S.attackers) {
+        if (m === S.ball.lastTouch && Math.hypot(S.ball.vx, S.ball.vy) > 120) continue;
+        if (dist(m, S.ball) < m.r + S.ball.r + 4) {
+          S.ball.owner = m; S.ball.kind = null; S.ctrl = S.attackers.indexOf(m);
+          m.face = norm(S.ball.x - m.x, S.ball.y - m.y);
+          break;
+        }
+      }
+      if (S.ball.owner) S.ball.lastTouch = null;
+    }
+
+    // 슛 충전
+    if (carrier() === ctrlP) {
+      if (shootDown) { S.charging = true; S.charge = Math.min(1, S.charge + dt * 1.1); }
+      else if (S.charging) shoot();
+      if (passPressed) pass();
+    } else {
+      S.charging = false; S.charge = 0;
+    }
+    passPressed = false;
+
+    // 수비 AI
+    const ballHolder = carrier();
+    const target = ballHolder || S.ball;
+    const sorted = [...S.defenders].sort((a, b) => dist(a, target) - dist(b, target));
+    const pressers = sorted.slice(0, S.cfg.pressers);
+    const markable = S.attackers.filter(m => m !== ballHolder);
+    const marked = new Set();
+    S.defenders.forEach(d => {
+      let tx, ty, sp = d.speed;
+      if (pressers.includes(d)) {
+        // 예측해서 압박
+        const lead = Math.min(dist(d, target) / 400, 0.4);
+        tx = target.x + (target.vx || 0) * lead;
+        ty = target.y + (target.vy || 0) * lead - 6;
+      } else {
+        // 가장 가까운 공격수 마크 (골대 쪽에 위치)
+        let best = null, bd = 1e9;
+        markable.forEach(m => { if (marked.has(m)) return; const dd = Math.hypot(m.x - d.hx, m.y - d.hy); if (dd < bd) { bd = dd; best = m; } });
+        if (best && bd < 220) {
+          marked.add(best);
+          const g = norm(300 - best.x, GOAL.y - best.y);
+          tx = best.x + g.x * 40; ty = best.y + g.y * 40;
+          sp *= 0.85;
+        } else {
+          // 지역 방어: 공 쪽으로 이동
+          tx = d.hx + (target.x - 300) * 0.35;
+          ty = d.hy + (target.y - d.hy) * 0.2;
+          sp *= 0.7;
+        }
+      }
+      moveToward(d, tx, ty, sp, dt);
+      d.face = norm(target.x - d.x, target.y - d.y);
+    });
+    // 수비수끼리 겹치지 않게
+    for (let i = 0; i < S.defenders.length; i++) for (let j = i + 1; j < S.defenders.length; j++) {
+      const a = S.defenders[i], b = S.defenders[j], dd = dist(a, b);
+      if (dd < 30 && dd > 0) { const p = (30 - dd) / 2, nx = (a.x - b.x) / dd, ny = (a.y - b.y) / dd; a.x += nx * p; a.y += ny * p; b.x -= nx * p; b.y -= ny * p; }
+    }
+
+    // 태클 / 인터셉트 판정
+    for (const d of S.defenders) {
+      if (ballHolder && dist(d, ballHolder) < d.r + ballHolder.r + 2) {
+        burst(ballHolder.x, ballHolder.y, 12, '#ff6b6b');
+        return endAttack(false, '태클 당했다!', '수비수에게 공을 빼앗겼습니다');
+      }
+      if (!S.ball.owner && dist(d, S.ball) < d.r + S.ball.r + 2) {
+        return endAttack(false, S.ball.kind === 'pass' ? '패스 차단!' : '수비수가 걷어냈다!', '공을 빼앗겼습니다');
+      }
+    }
+
+    // 골키퍼
+    const k = S.keeper;
+    let kx;
+    if (!S.ball.owner && S.ball.kind === 'shot' && S.ball.vy < 0) {
+      const t = (k.y - S.ball.y) / S.ball.vy;
+      kx = S.ball.x + S.ball.vx * Math.max(t, 0);
+      k.diving = 1;
+    } else {
+      kx = 300 + (S.ball.x - 300) * 0.45;
+      k.diving = Math.max(0, k.diving - dt * 2);
+      // 가까이 오면 앞으로 나옴
+    }
+    const kyT = GOAL.y + 20 + (S.ball.owner && S.ball.y < 300 ? clamp((300 - S.ball.y) * 0.25, 0, 40) : 0);
+    kx = clamp(kx, GOAL.l + 4, GOAL.r - 4);
+    moveToward(k, kx, kyT, k.speed * (k.diving ? 1.25 : 1), dt);
+    if (ballHolder && dist(k, ballHolder) < k.r + ballHolder.r + 2) return endAttack(false, '키퍼가 낚아챘다!', '너무 가까이 갔습니다');
+    if (!S.ball.owner && dist(k, S.ball) < k.r + S.ball.r + (k.diving ? 6 : 2)) {
+      burst(S.ball.x, S.ball.y, 14, '#ffffff');
+      return endAttack(false, '선방!', '골키퍼가 막아냈습니다');
+    }
+
+    // 골 / 아웃 판정
+    const b = S.ball;
+    if (b.y < GOAL.y) {
+      if (b.x > GOAL.l + 3 && b.x < GOAL.r - 3) return endAttack(true, 'GOAL!!!', '');
+      return endAttack(false, '빗나갔다!', '골대를 벗어났습니다');
+    }
+    if (b.x < FIELD.l || b.x > FIELD.r || b.y > FIELD.b) return endAttack(false, '아웃!', '공이 라인을 벗어났습니다');
+    if (!b.owner && Math.hypot(b.vx, b.vy) < 25 && b.kind === 'shot') {
+      // 멈춘 공 - 가장 가까운 공격수가 잡으러 가야 함
+      b.kind = null;
+    }
+  }
+
+  // ---------- 파티클 ----------
+  function burst(x, y, n, color) {
+    for (let i = 0; i < n; i++) {
+      const a = rand(0, Math.PI * 2), s = rand(60, 280);
+      S.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: rand(0.5, 1.1), c: color || ['#ffd23f', '#3a8dff', '#ffffff', '#ff4d4d'][i % 4] });
+    }
+  }
+  function updateParticles(dt) {
+    S.particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; p.life -= dt; });
+    S.particles = S.particles.filter(p => p.life > 0);
+  }
+
+  // ---------- 렌더링 ----------
+  function drawPitch() {
+    const stripe = 60;
+    for (let y = 0; y < H; y += stripe) {
+      ctx.fillStyle = (y / stripe) % 2 ? '#2f8f46' : '#2a8340';
+      ctx.fillRect(0, y, W, stripe);
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,.85)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(FIELD.l, FIELD.t, FIELD.r - FIELD.l, FIELD.b - FIELD.t);
+    // 하프라인 (화면 아래쪽)
+    ctx.beginPath(); ctx.moveTo(FIELD.l, FIELD.b - 10); ctx.lineTo(FIELD.r, FIELD.b - 10); ctx.stroke();
+    ctx.beginPath(); ctx.arc(300, FIELD.b - 10, 80, Math.PI, 0); ctx.stroke();
+    // 페널티 박스
+    ctx.strokeRect(120, FIELD.t, 360, 170);
+    ctx.strokeRect(200, FIELD.t, 200, 60);
+    ctx.beginPath(); ctx.arc(300, FIELD.t + 120, 3, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.beginPath(); ctx.arc(300, FIELD.t + 120, 70, 0.2 * Math.PI, 0.8 * Math.PI); ctx.stroke();
+    // 골대
+    ctx.fillStyle = 'rgba(255,255,255,.15)';
+    ctx.fillRect(GOAL.l, GOAL.y - GOAL.depth, GOAL.r - GOAL.l, GOAL.depth);
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1;
+    for (let x = GOAL.l; x <= GOAL.r; x += 10) { ctx.beginPath(); ctx.moveTo(x, GOAL.y - GOAL.depth); ctx.lineTo(x, GOAL.y); ctx.stroke(); }
+    for (let y = GOAL.y - GOAL.depth; y <= GOAL.y; y += 8) { ctx.beginPath(); ctx.moveTo(GOAL.l, y); ctx.lineTo(GOAL.r, y); ctx.stroke(); }
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(GOAL.l, GOAL.y); ctx.lineTo(GOAL.l, GOAL.y - GOAL.depth); ctx.lineTo(GOAL.r, GOAL.y - GOAL.depth); ctx.lineTo(GOAL.r, GOAL.y); ctx.stroke();
+  }
+
+  function drawPlayer(p, body, trim, label, highlight) {
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    ctx.beginPath(); ctx.ellipse(p.x + 3, p.y + 5, p.r, p.r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    if (highlight) {
+      ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 6, 0, Math.PI * 2); ctx.stroke();
+      // 머리 위 화살표
+      ctx.fillStyle = '#ffd23f';
+      ctx.beginPath(); ctx.moveTo(p.x, p.y - p.r - 10); ctx.lineTo(p.x - 7, p.y - p.r - 20); ctx.lineTo(p.x + 7, p.y - p.r - 20); ctx.fill();
+    }
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = trim; ctx.lineWidth = 2.5; ctx.stroke();
+    if (p.face) {
+      ctx.fillStyle = trim;
+      ctx.beginPath(); ctx.arc(p.x + p.face.x * (p.r - 4), p.y + p.face.y * (p.r - 4), 3, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, p.x, p.y + 1);
+  }
+
+  function drawBall() {
+    const b = S.ball;
+    ctx.fillStyle = 'rgba(0,0,0,.3)';
+    ctx.beginPath(); ctx.ellipse(b.x + 3, b.y + 4, b.r, b.r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = '#222';
+    for (let i = 0; i < 3; i++) {
+      const a = b.spin + i * 2.1;
+      ctx.beginPath(); ctx.arc(b.x + Math.cos(a) * 3.5, b.y + Math.sin(a) * 3.5, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  function drawAim() {
+    const c = carrier();
+    if (!c || c !== S.attackers[S.ctrl] || S.freeze > 0) return;
+    const a = aimPoint();
+    const d = norm(a.x - c.x, a.y - c.y);
+    const len = 60 + S.charge * 140;
+    ctx.save();
+    ctx.setLineDash([6, 6]);
+    ctx.strokeStyle = S.charging ? `rgba(255,${Math.round(210 - S.charge * 160)},63,.95)` : 'rgba(255,255,255,.45)';
+    ctx.lineWidth = S.charging ? 3 : 2;
+    ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(c.x + d.x * len, c.y + d.y * len); ctx.stroke();
+    ctx.restore();
+    if (mouse.active) {
+      ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(a.x, a.y, 9, 0, Math.PI * 2); ctx.moveTo(a.x - 14, a.y); ctx.lineTo(a.x + 14, a.y); ctx.moveTo(a.x, a.y - 14); ctx.lineTo(a.x, a.y + 14); ctx.stroke();
+    } else {
+      ctx.fillStyle = 'rgba(255,210,63,.8)';
+      ctx.beginPath(); ctx.arc(a.x, GOAL.y - 6, 5, 0, Math.PI * 2); ctx.fill();
+    }
+    if (S.charging) {
+      // 파워 게이지
+      const gx = c.x - 25, gy = c.y + 24;
+      ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(gx, gy, 50, 7);
+      const g = ctx.createLinearGradient(gx, 0, gx + 50, 0);
+      g.addColorStop(0, '#5cff7a'); g.addColorStop(0.6, '#ffd23f'); g.addColorStop(1, '#ff4d4d');
+      ctx.fillStyle = g; ctx.fillRect(gx, gy, 50 * S.charge, 7);
+    }
+  }
+
+  function drawUI() {
+    // 공격 타이머 바
+    const w = 300, x = (W - w) / 2, y = H - 14;
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(x, y, w, 8);
+    const r = S.timer / ATTACK_TIME;
+    ctx.fillStyle = r > 0.4 ? '#5cff7a' : r > 0.2 ? '#ffd23f' : '#ff4d4d';
+    ctx.fillRect(x, y, w * r, 8);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(S.timer.toFixed(1) + 's', x - 8, y + 4);
+    // 스태미나
+    ctx.textAlign = 'left';
+    ctx.fillText('질주', x + w + 8, y + 4);
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(x + w + 40, y, 60, 8);
+    ctx.fillStyle = '#3ad1ff'; ctx.fillRect(x + w + 40, y, 60 * S.stamina, 8);
+
+    if (S.flash) {
+      const t = S.flash.t;
+      const sc = Math.min(1, t * 5) * (1 + Math.max(0, 0.3 - t) );
+      ctx.save();
+      ctx.translate(W / 2, H / 2 - 40);
+      ctx.scale(sc, sc);
+      ctx.fillStyle = 'rgba(0,0,0,.55)';
+      ctx.fillRect(-W / 2, -50, W, 100);
+      ctx.fillStyle = S.flash.color; ctx.font = '900 54px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(S.flash.title, 0, -10);
+      ctx.fillStyle = '#fff'; ctx.font = '600 18px sans-serif';
+      ctx.fillText(S.flash.sub || '', 0, 30);
+      ctx.restore();
+    }
+  }
+
+  function render() {
+    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+    drawPitch();
+    if (S.ball) {
+      S.defenders.forEach(d => drawPlayer(d, '#d93434', '#ffffff', d.num));
+      drawPlayer(S.keeper, '#2b2b2b', '#ffd23f', '1');
+      S.attackers.forEach((m, i) => drawPlayer(m, '#2f6fe0', '#ffffff', m.num, i === S.ctrl && S.mode === 'play'));
+      drawAim();
+      drawBall();
+      S.particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.fillRect(p.x - 3, p.y - 3, 6, 6); });
+      ctx.globalAlpha = 1;
+      drawUI();
+    }
+  }
+
+  // ---------- 화면 ----------
+  const ovTitle = document.getElementById('ovTitle'), ovMsg = document.getElementById('ovMsg');
+  const btnStart = document.getElementById('btnStart'), mBtn = document.getElementById('mBtn');
+  let msgCb = null;
+  function showMsg(title, stars, body, btn, cb) {
+    document.getElementById('mTitle').textContent = title;
+    document.getElementById('mStars').textContent = stars;
+    document.getElementById('mBody').innerHTML = body;
+    mBtn.textContent = btn;
+    msgCb = cb;
+    ovMsg.classList.remove('hidden');
+  }
+  mBtn.addEventListener('click', () => {
+    ovMsg.classList.add('hidden');
+    shootDown = false; passPressed = false;
+    if (msgCb) msgCb();
+    S.mode = 'play';
+  });
+  btnStart.addEventListener('click', () => {
+    ovTitle.classList.add('hidden');
+    S.stage = 1; S.score = 0;
+    setupStage();
+    shootDown = false; passPressed = false;
+    S.mode = 'play';
+  });
+  if (best) document.getElementById('bestTxt').innerHTML = `🏅 최고 점수: <b style="color:#ffd23f">${best}</b>`;
+
+  // 타이틀 배경용 데모 배치
+  S.stage = 1; S.cfg = stageConfig(1); setupAttack();
+
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.033, (now - last) / 1000);
+    last = now;
+    if (S.mode === 'play') update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
